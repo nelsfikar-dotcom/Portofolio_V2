@@ -1,6 +1,4 @@
 import { NextResponse } from 'next/server';
-import { writeFile, mkdir } from 'fs/promises';
-import path from 'path';
 import { revalidatePath } from 'next/cache';
 import { prisma } from '@/lib/prisma';
 
@@ -25,24 +23,20 @@ export async function POST(request: Request) {
       );
     }
 
+    // Batasi ukuran maksimal file (misal 4 MB) agar payload Vercel & DB tetap ringan
+    const maxSize = 4 * 1024 * 1024;
+    if (file.size > maxSize) {
+      return NextResponse.json(
+        { error: 'Ukuran gambar maksimal adalah 4MB.' },
+        { status: 400 }
+      );
+    }
+
+    // Ubah file gambar menjadi Data URL (Base64) agar kompatibel dengan Vercel Serverless
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
-
-    const ext = path.extname(file.name) || '.png';
-    const baseName = path
-      .basename(file.name, ext)
-      .toLowerCase()
-      .replace(/[^a-z0-9-_]/g, '-')
-      .slice(0, 40);
-
-    const uniqueName = `${Date.now()}-${baseName || 'preview'}${ext}`;
-    const uploadsDir = path.join(process.cwd(), 'public', 'uploads');
-
-    await mkdir(uploadsDir, { recursive: true });
-    const filePath = path.join(uploadsDir, uniqueName);
-    await writeFile(filePath, buffer);
-
-    const publicUrl = `/uploads/${uniqueName}`;
+    const base64Data = buffer.toString('base64');
+    const publicUrl = `data:${file.type};base64,${base64Data}`;
 
     // Jika disertai projectId, langsung simpan ke kolom thumbnail Project di database
     if (projectId) {
